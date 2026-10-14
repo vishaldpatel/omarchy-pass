@@ -104,19 +104,24 @@ omarchy-shell shell toggle vishal.pass
 save every password unencrypted. The plugin's `pass-copy.sh` script does the
 copy instead:
 
-1. It decrypts the entry with `pass show` and picks the field you asked for.
+1. It decrypts the entry with `gpg`, the same way `pass show` does, and picks
+   the field you asked for.
 2. It copies it with `wl-copy --sensitive`, which tells clipboard managers
    (including Omarchy's) not to record it.
 3. For passwords, it waits `PASSWORD_STORE_CLIP_TIME` seconds. If the clipboard
    still holds the same password, it clears it. Copying another password
    restarts the countdown. Usernames aren't cleared.
 
-The password isn't passed as a command argument, so it doesn't show up in
-the process list. The countdown keeps only a SHA-256 hash of the password,
-for checking whether the clipboard still holds it.
+Neither the password nor the entry name is passed as a command argument, so
+neither shows up in the process list (`/proc/<pid>/cmdline` is readable by
+every local user). The entry name travels in the environment instead, and the
+`.gpg` file is fed to `gpg` on stdin. Notifications don't name the entry.
+The countdown keeps only a SHA-256 hash of the password, for checking whether
+the clipboard still holds it.
 
 Recently used entry *names* (never passwords) are kept in
-`~/.local/state/pass-widget/recent`.
+`~/.local/state/pass-widget/recent`, readable only by you (the directory is
+`0700` and the file `0600`).
 
 ## Files
 

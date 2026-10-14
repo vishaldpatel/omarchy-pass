@@ -2,8 +2,14 @@
 
 # Decrypts a pass entry and copies one field to the clipboard.
 #
-#   pass-copy.sh password <entry>   first line of the entry
-#   pass-copy.sh username <entry>   a "user:", "username:", "login:" or "email:" line
+#   PASS_WIDGET_ENTRY=<entry> pass-copy.sh password   first line of the entry
+#   PASS_WIDGET_ENTRY=<entry> pass-copy.sh username   a "user:", "username:", "login:" or "email:" line
+#
+# The entry name is taken from the environment rather than argv, and is never
+# put on any child's command line, because /proc/<pid>/cmdline is readable by
+# every local user while /proc/<pid>/environ is not. For the same reason the
+# entry is decrypted by feeding the .gpg file to gpg on stdin instead of
+# calling `pass show <entry>`, and notifications don't name the entry.
 #
 # Unlike `pass -c`, the copy is marked sensitive (x-kde-passwordManagerHint),
 # so Omarchy's clipboard history never records it. The clipboard is cleared
@@ -11,10 +17,13 @@
 # secret.
 
 set -o pipefail
+umask 077
 
 field="${1:-}"
-entry="${2:-}"
+entry="${PASS_WIDGET_ENTRY:-}"
+unset PASS_WIDGET_ENTRY
 clip_time="${PASSWORD_STORE_CLIP_TIME:-45}"
+store_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/pass-widget"
 recent_file="$state_dir/recent"
 timer_pid_file="$state_dir/clear-timer.pid"
@@ -24,12 +33,25 @@ notify() {
 }
 
 [[ -n $entry && ($field == password || $field == username) ]] || {
-  echo "usage: pass-copy.sh password|username <entry>" >&2
+  echo "usage: PASS_WIDGET_ENTRY=<entry> pass-copy.sh password|username" >&2
   exit 2
 }
 
-if ! content=$(pass show -- "$entry" 2>/dev/null); then
-  notify "Couldn't decrypt $entry" "The passphrase prompt was cancelled or the entry is unreadable." dialog-error
+# Same traversal guard as pass's check_sneaky_paths.
+if [[ $entry =~ /\.\.$ || $entry =~ ^\.\./ || $entry =~ /\.\./ || $entry =~ ^\.\.$ ]]; then
+  echo "pass-copy.sh: refusing path with '..'" >&2
+  exit 2
+fi
+
+# Mirror pass's gpg selection and options.
+gpg=gpg
+command -v gpg2 >/dev/null 2>&1 && gpg=gpg2
+read -r -a gpg_opts <<<"${PASSWORD_STORE_GPG_OPTS:-}"
+gpg_opts+=(--quiet --yes --compress-algo=none --no-encrypt-to)
+[[ -n ${GPG_AGENT_INFO:-} || $gpg == gpg2 ]] && gpg_opts+=(--batch --use-agent)
+
+if ! content=$("$gpg" -d "${gpg_opts[@]}" <"$store_dir/$entry.gpg" 2>/dev/null); then
+  notify "Couldn't decrypt entry" "The passphrase prompt was cancelled or the entry is unreadable." dialog-error
   exit 1
 fi
 
@@ -43,7 +65,7 @@ fi
 unset content
 
 if [[ -z $secret ]]; then
-  notify "No ${label,,} in $entry" "Add a line like \"username: you@example.com\" to the entry." dialog-warning
+  notify "No ${label,,} in entry" "Add a line like \"username: you@example.com\" to the entry." dialog-warning
   exit 1
 fi
 
@@ -53,12 +75,23 @@ printf '%s' "$secret" | wl-copy --sensitive || {
 }
 
 mkdir -p "$state_dir"
+# Tighten state written by older versions under a permissive umask.
+chmod 700 "$state_dir" 2>/dev/null
+[[ -f $recent_file ]] && chmod 600 "$recent_file" 2>/dev/null
 
-# Most-recent-first, de-duplicated, capped.
+# Most-recent-first, de-duplicated, capped. Filtered in bash, not grep, so the
+# entry name stays off the command line.
 {
   printf '%s\n' "$entry"
-  [[ -f $recent_file ]] && grep -vxF -- "$entry" "$recent_file"
-} | head -n 30 >"$recent_file.tmp" && mv "$recent_file.tmp" "$recent_file"
+  if [[ -f $recent_file ]]; then
+    n=1
+    while IFS= read -r line && ((n < 30)); do
+      [[ $line == "$entry" ]] && continue
+      printf '%s\n' "$line"
+      ((n++))
+    done <"$recent_file"
+  fi
+} >"$recent_file.tmp" && mv "$recent_file.tmp" "$recent_file"
 
 if [[ $field == password ]]; then
   # Passwords auto-clear; usernames stay put.
@@ -78,8 +111,8 @@ if [[ $field == password ]]; then
   echo $! >"$timer_pid_file"
   disown
 
-  notify "Password copied" "$entry · clears in ${clip_time}s"
+  notify "Password copied" "Clears in ${clip_time}s"
 else
   unset secret
-  notify "Username copied" "$entry" dialog-information
+  notify "Username copied" "" dialog-information
 fi

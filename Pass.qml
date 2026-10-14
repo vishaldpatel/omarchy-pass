@@ -123,7 +123,12 @@ Item {
     var name = displayModel.get(index).name
     // Close first so a pinentry prompt can take keyboard focus.
     root.dismiss()
-    Quickshell.execDetached(["bash", root.helper, field, name])
+    // Entry names can be private, so pass them via the environment
+    // (owner-only /proc/<pid>/environ), never argv (world-readable cmdline).
+    Quickshell.execDetached({
+      command: ["bash", root.helper, field],
+      environment: { PASS_WIDGET_ENTRY: name }
+    })
   }
 
   ListModel { id: displayModel }
