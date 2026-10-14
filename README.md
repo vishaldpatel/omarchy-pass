@@ -1,6 +1,6 @@
 # Pass for Omarchy
 
-![Screenshot](my-screenshot.webp)
+![Screenshot](screenshot.webp)
 
 A quick-search popup for your [pass](https://www.passwordstore.org/) password
 store, built as an [Omarchy](https://omarchy.org/) shell plugin. Press a key
