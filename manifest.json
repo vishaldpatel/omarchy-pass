@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "vishal.pass",
+  "name": "Pass",
+  "version": "1.0.0",
+  "author": "Vishal",
+  "description": "Fuzzy-search your pass store and copy a password to the clipboard",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Pass.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Pass",
+    "description": "Opens the password picker",
+    "category": "Utilities",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
